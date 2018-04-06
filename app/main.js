@@ -95,10 +95,13 @@ const appDelegate = {
     ipcMain.on('hide-window', () => window.hide());
 
     window.loadURL('file://' + path.join(__dirname, 'index.html'));
-    window.on('close', () => {
-      log.debug('The browser window is closing, shutting down the tunnel...');
-      window.webContents.send('shutdown');
-    });
+
+    if (process.platform !== 'win32') {
+      window.on('close', () => {
+        log.debug('The browser window is closing, shutting down the tunnel...');
+        window.webContents.send('shutdown');
+      });
+    }
 
     ipcMain.on('collect-logs', (event, id, toRedact) => {
       log.info('Collecting logs in', appDelegate._logFileLocation);
@@ -154,6 +157,10 @@ const appDelegate = {
   },
 
   _startBackend: () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+  
     const backendIsRunning = appDelegate._rpcAddressFileExists();
     if (backendIsRunning) {
       log.info('Not starting the backend as it appears to already be running');
