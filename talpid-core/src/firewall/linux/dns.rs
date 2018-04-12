@@ -1,10 +1,14 @@
+extern crate notify;
 extern crate resolv_conf;
 
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::mem;
 use std::net::IpAddr;
+use std::sync::mpsc;
+use std::thread;
 
+use self::notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use self::resolv_conf::Config;
 
 use dns::{DnsConfig, DnsConfigInterface, DnsConfigManager, DnsConfigMonitor, UpdateSender};
@@ -19,11 +23,17 @@ error_chain!{
             description("failed to read /etc/resolv.conf")
         }
 
+        WatchResolvConf {
+            description("failed to watch /etc/resolv.conf")
+        }
+
         WriteResolvConf {
             description("failed to write to /etc/resolv.conf")
         }
     }
 }
+
+static RESOLV_CONF_PATH: &str = "/etc/resolv.conf";
 
 pub type LinuxDnsManager = DnsConfigManager<LinuxDnsInterface, LinuxDnsMonitor>;
 
@@ -99,12 +109,29 @@ impl DnsConfigInterface for LinuxDnsInterface {
     }
 }
 
-pub struct LinuxDnsMonitor;
+pub struct LinuxDnsMonitor {
+    _watcher: RecommendedWatcher,
+}
 
 impl DnsConfigMonitor<()> for LinuxDnsMonitor {
     type Error = Error;
 
-    fn spawn(_: UpdateSender<()>) -> Result<Self> {
-        Ok(LinuxDnsMonitor)
+    fn spawn(mut event_sink: UpdateSender<()>) -> Result<Self> {
+        let (tx, rx) = mpsc::channel();
+        let mut watcher = notify::raw_watcher(tx).chain_err(|| ErrorKind::WatchResolvConf)?;
+
+        watcher
+            .watch(RESOLV_CONF_PATH, RecursiveMode::NonRecursive)
+            .chain_err(|| ErrorKind::WatchResolvConf)?;
+
+        thread::spawn(move || {
+            for _ in rx {
+                if event_sink.send(()).is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(LinuxDnsMonitor { _watcher: watcher })
     }
 }
