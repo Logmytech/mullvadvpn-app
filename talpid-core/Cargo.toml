@@ -21,6 +21,7 @@ talpid-types = { path = "../talpid-types" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.20"
+resolv-conf = { path = "../../resolv-conf" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 pfctl = "0.1"
